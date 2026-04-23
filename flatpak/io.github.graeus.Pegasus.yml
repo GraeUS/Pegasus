@@ -1,10 +1,10 @@
-id: io.gitlab.azymohliad.WatchMate
+id: io.github.graeus.Pegasus
 runtime: org.gnome.Platform
 runtime-version: '47'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
-command: watchmate
+command: pegasus
 finish-args:
   - --allow=bluetooth
   - --share=ipc
@@ -24,7 +24,7 @@ modules:
         - --share=network
     build-commands:
       - cargo build --release --locked
-      - install -Dm 755 target/release/watchmate -t /app/bin
+      - install -Dm 755 target/release/pegasus -t /app/bin
       - install -Dm 644 assets/${FLATPAK_ID}.desktop -t /app/share/applications
       - install -Dm 644 assets/${FLATPAK_ID}.metainfo.xml -t /app/share/metainfo
       - install -Dm 644 assets/${FLATPAK_ID}.gschema.xml -t /app/share/glib-2.0/schemas

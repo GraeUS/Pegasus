@@ -3,7 +3,7 @@ fn main() {
         // Name of the file that will be generated at `OUT_DIR`
         "icon_names.rs",
         // Optional app ID
-        Some("io.gitlab.azymohliad.WatchMate"),
+        Some("io.github.graeus.Pegasus"),
         // Custom base resource path:
         None::<&str>,
         // Directory with custom icons (if any)

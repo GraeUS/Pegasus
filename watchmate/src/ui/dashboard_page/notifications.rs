@@ -31,7 +31,7 @@ impl Model {
                         log::warn!(
                             "Notification session failed: the app doesn't have permissions to monitor \
                             D-Bus session bus. If you're running it from flatpak, you can grant access with \
-                            command: `flatpak override --socket=session-bus io.gitlab.azymohliad.WatchMate`, \
+                            command: `flatpak override --socket=session-bus io.github.graeus.Pegasus`, \
                             or via Flatseal"
                         );
                         ui::BROKER.send(ui::Input::ToastWithLink {

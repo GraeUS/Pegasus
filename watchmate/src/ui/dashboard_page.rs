@@ -161,7 +161,7 @@ impl Component for Model {
             adw::HeaderBar {
                 #[wrap(Some)]
                 set_title_widget = &gtk::Label {
-                    set_label: "Watchmate",
+                    set_label: "Pegasus",
                 },
 
                 pack_start = &gtk::Button {
