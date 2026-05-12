@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <schemalist>
-  <schema id="io.gitlab.azymohliad.WatchMate" path="/io/gitlab/azymohliad/WatchMate/">
+  <schema id="io.github.graeus.Pegasus" path="/io/github/graeus/Pegasus/">
     <key name="forward-notifications" type="b">
       <default>false</default>
       <summary>Notification forwarding</summary>

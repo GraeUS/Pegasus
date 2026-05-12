@@ -37,7 +37,7 @@ impl Model {
             let request = Background::request()
                 .identifier(identifier)
                 .auto_start(autostart)
-                .command(["watchmate", "--background"])
+                .command(["pegasus", "--background"])
                 .reason("Keep the watch connected, forward notifications, control media player");
             let response = request.send().await.and_then(|r| r.response());
             handler(response);

@@ -1,99 +1,141 @@
-# Watchmate
+# Pegasus
 
-Companion app for [InfiniTime](https://github.com/InfiniTimeOrg/InfiniTime/)-powered [PineTime](https://www.pine64.org/pinetime/) smart watch.
+**Pegasus** is a companion app for the PineTime smartwatch built for Linux phones and desktops. It keeps your watch connected, forwards notifications, and provides access to health and device information—while laying the groundwork for a richer cross-device activity tracking experience.
 
-Visually optimized for GNOME, adaptive for phone and desktop, Linux only.
+Pegasus began as a fork of the excellent [Watchmate](https://github.com/azymohliad/watchmate) project and is evolving into a broader platform for PineTime integration across the Linux ecosystem.
 
-![watchmate_v0.4.0](https://user-images.githubusercontent.com/4020369/216776553-59d2081e-9729-4997-8021-0882296621a4.png)
+---
 
 ## Features
 
-- Current time service.
-- Data reading: battery level, heart rate, steps count, firmware version.
-- OTA firmware and external resources updates. Both, from manually specified DFU/resources files, or automatically downloaded from [InfiniTime releases](https://github.com/InfiniTimeOrg/InfiniTime/releases) for selected version.
-- Media-player control.
-- Notifications forwarding.
+Pegasus currently supports:
 
-## Install
+- Bluetooth connection to PineTime
+- Notification forwarding from your device
+- Battery level monitoring
+- Step count display
+- Heart-rate display
+- Media playback control
+- Firmware updates via `fwupd`
+- Background service mode
 
-Watchmate is available on [Flathub](https://flathub.org/apps/details/io.gitlab.azymohliad.WatchMate):
+Pegasus is designed to make PineTime feel like a natural extension of your Linux environment.
 
-```
-flatpak install io.gitlab.azymohliad.WatchMate
-```
+---
 
-Or via the following community-maintained distro packages:
+## Roadmap
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/watchmate.svg)](https://repology.org/project/watchmate/versions)
+Pegasus is growing beyond a simple companion utility. Planned directions include:
 
-## Build
+- Activity tracking across phone and desktop
+- Persistent step and heart-rate history
+- Exportable activity summaries
+- Lightweight personal fitness logging
+- Improved reconnect reliability
+- Convergent interface support for Linux mobile workflows
 
-### Native
+The long-term goal is to make PineTime an active partner in your daily movement—not just a passive display.
 
-##### Prerequisites
+---
 
-- [GTK4](https://gtk-rs.org/gtk4-rs/stable/latest/book/installation_linux.html)
-- [Libadwaita](https://gtk-rs.org/gtk4-rs/stable/latest/book/libadwaita.html#linux)
-- [Rust](https://www.rust-lang.org/tools/install)
+## Installation (Development Build)
 
-##### Add glib schema for persistent settings
+### Install Dependencies (Ubuntu / Kubuntu)
 
-Settings schema can be installed locally as follows:
-
-```
-mkdir -p $HOME/.local/share/glib-2.0/schemas/
-cp assets/io.gitlab.azymohliad.WatchMate.gschema.xml $HOME/.local/share/glib-2.0/schemas/
-glib-compile-schemas $HOME/.local/share/glib-2.0/schemas/
-```
-
-##### Build and Run
-
-To compile and run the project, execute the following command from repo directory:
-
-```
-cargo run --release
-```
-
-### Flatpak
-
-##### Prerequisites
-
-- [flatpak](https://www.flatpak.org/setup/)
-- [flatpak-builder](https://docs.flatpak.org/en/latest/flatpak-builder.html)
-
-##### Install Dependencies
-
-```
-flatpak install org.gnome.Platform//45 org.gnome.Sdk//45 org.freedesktop.Sdk.Extension.rust-stable//23.08
+```bash
+sudo apt install \
+  build-essential \
+  pkg-config \
+  libdbus-1-dev \
+  libgtk-4-dev \
+  libadwaita-1-dev \
+  meson \
+  ninja-build
 ```
 
-##### Build
+### Build Pegasus
 
-```
-flatpak-builder --user target/flatpak flatpak/io.gitlab.azymohliad.WatchMate.yml
-```
-
-##### Run
-
-```
-flatpak-builder --run target/flatpak flatpak/io.gitlab.azymohliad.WatchMate.yml watchmate
+```bash
+cargo build
 ```
 
-##### Install
+### Run Pegasus
 
+```bash
+cargo run
 ```
-flatpak-builder --install target/flatpak flatpak/io.gitlab.azymohliad.WatchMate.yml
+
+---
+
+## Background Mode
+
+Pegasus can run in the background to maintain the PineTime connection:
+
+```bash
+pegasus --background
 ```
 
-Here and above, `target/flatpak` is the build directory. It's a convenient default for Rust project (`target` is already in `.gitignore`), but can be anything else.
+---
 
-## Tech Stack and Thanks
+## Flatpak Build (Optional)
 
-Watchmate stands on the shoulders of the following giants:
+Build locally using Flatpak:
 
-- [Rust](https://www.rust-lang.org/) programming language.
-- [Relm4](https://relm4.org/), [GTK4](https://gtk.org/) ([rs](https://gtk-rs.org/)) and [Libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/) ([rs](https://world.pages.gitlab.gnome.org/Rust/libadwaita-rs/)) for GUI.
-- [BlueR](https://world.pages.gitlab.gnome.org/Rust/libadwaita-rs/) (an official [BlueZ](http://www.bluez.org/) Bindings for Rust) for the bluetooth stack.
-- Awesome parts of Rust ecosystem, like [tokio](https://tokio.rs/), [serde](https://serde.rs/), [reqwest](https://github.com/seanmonstar/reqwest), [zbus](https://gitlab.freedesktop.org/dbus/zbus/), [anyhow](https://github.com/dtolnay/anyhow) and others (see [Cargo.toml](Cargo.toml) for the full list).
+```bash
+flatpak-builder --user target/flatpak flatpak/io.github.graeus.Pegasus.yml
+```
 
-I'm deeply grateful to all people behind these technologies. Watchmate wouldn't be possible without them: first, it would be technically unliftable; second, even with the alternatives, I probably wouldn't enjoy it so much, and joy is vitally important for hobby projects like this one.
+Run the Flatpak build:
+
+```bash
+flatpak-builder --run target/flatpak flatpak/io.github.graeus.Pegasus.yml pegasus
+```
+
+Install locally:
+
+```bash
+flatpak-builder --install target/flatpak flatpak/io.github.graeus.Pegasus.yml
+```
+
+---
+
+## Project Status
+
+Pegasus is early in its independent development.
+
+Current priorities:
+
+- stabilizing the renamed application identity
+- preparing activity-tracking infrastructure
+- improving Bluetooth reconnect reliability
+- supporting convergent Linux workflows
+
+Expect rapid iteration.
+
+---
+
+## Relationship to Watchmate
+
+Pegasus builds on the foundation created by the original Watchmate project:
+
+https://github.com/azymohliad/watchmate
+
+Watchmate made PineTime integration on Linux practical and enjoyable. Pegasus continues that work while exploring new directions for activity tracking and cross-device workflows.
+
+---
+
+## Contributing
+
+Contributions, testing feedback, and ideas are welcome.
+
+If you are experimenting with PineTime on Linux phones, desktops, or convergent devices, your experience can directly shape Pegasus.
+
+Open an issue or discussion:
+
+https://github.com/GraeUS/Pegasus/issues
+
+---
+
+## License
+
+Pegasus inherits the license of the upstream Watchmate project. See the `LICENSE` file for details.

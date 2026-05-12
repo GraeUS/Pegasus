@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Watchmate
-GenericName=PineTime Companion App
+Name=Pegasus
+GenericName=PineTime Health App
 Comment=Sync and integrate with PineTime smart watch
-Exec=watchmate
-Icon=io.gitlab.azymohliad.WatchMate
+Exec=pegasus
+Icon=io.github.graeus.Pegasus
 Terminal=false
 Type=Application
 Categories=Utility;GNOME;GTK;

@@ -17,7 +17,7 @@ mod icon_names {
 }
 
 
-static APP_ID: &'static str = "io.gitlab.azymohliad.WatchMate";
+static APP_ID: &'static str = "io.github.graeus.Pegasus";
 static SETTING_NOTIFICATIONS: &'static str = "forward-notifications";
 static SETTING_BACKGROUND: &'static str = "run-in-background";
 static SETTING_AUTO_START: &'static str = "auto-start";
@@ -318,10 +318,10 @@ impl Component for Model {
                 adw::AboutWindow::builder()
                     .transient_for(root)
                     .application_icon(APP_ID)
-                    .application_name("Watchmate")
+                    .application_name("Pegasus")
                     .version("v0.5.3")
-                    .website("https://github.com/azymohliad/watchmate")
-                    .issue_url("https://github.com/azymohliad/watchmate/issues")
+                    .website("https://github.com/GraeUS/Pegasus")
+                    .issue_url("https://github.com/GraeUS/Pegasus/issues")
                     .license_type(gtk::License::Gpl30)
                     .build()
                     .present();

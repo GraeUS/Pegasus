@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Andrii Zymohliad 2022 <azymohliad@proton.me> -->
 <component type="desktop-application">
-  <id>io.gitlab.azymohliad.WatchMate</id>
+  <id>io.github.graeus.Pegasus</id>
   <metadata_license>CC0</metadata_license>
   <project_license>GPL-3.0</project_license>
-  <name>Watchmate</name>
+  <name>Pegasus</name>
   <summary>Manage your PineTime</summary>
 
   <description>
@@ -27,7 +27,7 @@
     <category>Utility</category>
   </categories>
 
-  <launchable type="desktop-id">io.gitlab.azymohliad.WatchMate.desktop</launchable>
+  <launchable type="desktop-id">io.github.graeus.Pegasus.desktop</launchable>
 
   <screenshots>
     <screenshot type="default">
@@ -36,12 +36,12 @@
     </screenshot>
   </screenshots>
 
-  <url type="homepage">https://github.com/azymohliad/watchmate</url>
-  <url type="bugtracker">https://github.com/azymohliad/watchmate/issues</url>
+  <url type="homepage">https://github.com/GraeUS/Pegasus</url>
+  <url type="bugtracker">https://github.com/GraeUS/Pegasus/issues</url>
   <content_rating type="oars-1.0" />
 
   <provides>
-    <binary>watchmate</binary>
+    <binary>pegasus</binary>
   </provides>
 
   <requires>
