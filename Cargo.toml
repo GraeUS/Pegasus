@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "watchmate",
+    "pegasus",
     "infinitime"
 ]
 resolver = "2"

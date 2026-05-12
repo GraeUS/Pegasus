@@ -16,7 +16,7 @@ finish-args:
   - --system-talk-name=org.bluez          # Bluetooth
   - --talk-name=org.mpris.MediaPlayer2.*  # Media player control
 modules:
-  - name: watchmate
+  - name: pegasus
     buildsystem: simple
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin

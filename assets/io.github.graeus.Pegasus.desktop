@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Pegasus
-GenericName=PineTime Companion App
+GenericName=PineTime Health App
 Comment=Sync and integrate with PineTime smart watch
 Exec=pegasus
 Icon=io.github.graeus.Pegasus

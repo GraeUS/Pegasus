@@ -3,23 +3,6 @@
 version = 3
 
 [[package]]
-name = "Pegasus"
-version = "0.5.3"
-dependencies = [
- "anyhow",
- "ashpd",
- "env_logger",
- "futures",
- "infinitime",
- "log",
- "relm4",
- "relm4-components",
- "relm4-icons",
- "relm4-icons-build",
- "version-compare",
-]
-
-[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2126,6 +2109,23 @@ checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest",
  "hmac",
+]
+
+[[package]]
+name = "pegasus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ashpd",
+ "env_logger",
+ "futures",
+ "infinitime",
+ "log",
+ "relm4",
+ "relm4-components",
+ "relm4-icons",
+ "relm4-icons-build",
+ "version-compare",
 ]
 
 [[package]]
