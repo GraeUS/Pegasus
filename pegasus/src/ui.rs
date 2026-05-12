@@ -269,8 +269,15 @@ impl Component for Model {
                     match infinitime.get_property_stream().await {
                         Ok(stream) => {
                             pin_mut!(stream);
-                            // Wait for the event stream to end
-                            stream.count().await;
+
+                            while let Some(property) = stream.next().await {
+                                log::debug!("Device property changed: {:?}", property);
+
+                                if let bluer::DeviceProperty::Connected(false) = property {
+                                    log::info!("PineTime connection lost");
+                                    break;
+                                }
+                            }
                         }
                         Err(error) => {
                             log::error!("Failed to get property stream: {}", error);
