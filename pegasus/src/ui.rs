@@ -7,7 +7,7 @@ use relm4::{
     Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, timeout, Duration};
 
 mod dashboard_page;
 mod devices_page;
@@ -72,6 +72,39 @@ struct Model {
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
     hide_on_startup: bool,  // Temporary hack
+}
+
+async fn wait_for_services_resolved(
+    device: Arc<bluer::Device>,
+    max_wait: Duration,
+) -> bluer::Result<bool> {
+    if device.is_connected().await? && device.is_services_resolved().await? {
+        return Ok(true);
+    }
+
+    let stream = device.events().await?;
+    pin_mut!(stream);
+
+    let wait = async {
+        while let Some(event) = stream.next().await {
+            if let bluer::DeviceEvent::PropertyChanged(property) = event {
+                log::debug!("Device property changed while waiting for GATT: {:?}", property);
+
+                if let bluer::DeviceProperty::ServicesResolved(true) = property {
+                    return true;
+                }
+
+                if let bluer::DeviceProperty::Connected(false) = property {
+                    log::warn!("Device disconnected before GATT services resolved");
+                    return false;
+                }
+            }
+        }
+
+        false
+    };
+
+    Ok(timeout(max_wait, wait).await.unwrap_or(false))
 }
 
 #[relm4::component]
@@ -242,30 +275,61 @@ impl Component for Model {
                     loop {
                         attempts += 1;
 
+                        log::info!(
+                            "Waiting for InfiniTime GATT services, attempt {}",
+                            attempts
+                        );
+
+                        match wait_for_services_resolved(device.clone(), Duration::from_secs(20)).await {
+                            Ok(true) => {
+                                log::info!("InfiniTime GATT services resolved");
+                            }
+                            Ok(false) => {
+                                log::warn!(
+                                    "InfiniTime GATT services did not resolve on attempt {}",
+                                    attempts
+                                );
+                            }
+                            Err(error) => {
+                                log::warn!(
+                                    "Failed while waiting for GATT services on attempt {}: {}",
+                                    attempts,
+                                    error
+                                );
+                            }
+                        }
+
                         match bt::InfiniTime::new(device.clone()).await {
                             Ok(infinitime) => {
-                                log::info!("InfiniTime services resolved after {} attempt(s)", attempts);
+                                log::info!(
+                                    "InfiniTime services loaded after {} attempt(s)",
+                                    attempts
+                                );
+
                                 sender.input(Input::DeviceReady(Arc::new(infinitime)));
                                 break;
                             }
 
                             Err(error) => {
                                 log::warn!(
-                                    "Failed to resolve InfiniTime services on attempt {}: {}",
+                                    "InfiniTime services still unavailable on attempt {}: {}",
                                     attempts,
                                     error
                                 );
 
                                 if attempts >= 5 {
+                                    log::warn!(
+                                        "Failed to load InfiniTime services after {} attempts",
+                                        attempts
+                                    );
+
                                     sender.input(Input::DeviceRejected);
                                     sender.input(Input::ToastStatic("Device is rejected by the app"));
-
-                                    // Treat this as a failed connection so the reconnect flow can try again.
                                     sender.input(Input::DeviceDisconnected);
                                     break;
                                 }
 
-                                sleep(Duration::from_secs(2)).await;
+                                sleep(Duration::from_secs(3)).await;
                             }
                         }
                     }
