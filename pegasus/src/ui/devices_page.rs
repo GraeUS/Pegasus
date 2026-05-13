@@ -394,18 +394,18 @@ impl Component for Model {
             Input::DeviceConnectionLost(address) => {
                 log::debug!("Device connection lost: {}", address);
 
-                let devices = self.devices.guard();
-                let result = devices
-                    .iter()
-                    .enumerate()
-                    .find(|(_, d)| d.address == address);
-                if let Some((idx, _)) = result {
-                    devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
-                }
-                if Some(address) != self.disconnecting_address
-                    && Some(address) == self.saved_address
                 {
+                    let devices = self.devices.guard();
+                    let result = devices.iter().enumerate().find(|(_, d)| d.address == address);
+                    if let Some((idx, _)) = result {
+                        devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
+                    }
+                }
+
+                if Some(address) != self.disconnecting_address && Some(address) == self.saved_address {
                     self.autoconnect_address = Some(address);
+
+                    sender.input(Input::StopDiscovery);
                     sender.input(Input::StartDiscovery);
                 }
             }

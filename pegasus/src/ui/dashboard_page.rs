@@ -92,7 +92,7 @@ impl Model {
 
     async fn run_info_listener(infinitime: Arc<bt::InfiniTime>, sender: ComponentSender<Self>) {
         let log_error = |err| {
-            log::error!("Failed to create data stream: {}", &err);
+            log::warn!("Data stream unavailable or stopped: {}", &err);
             err
         };
 
