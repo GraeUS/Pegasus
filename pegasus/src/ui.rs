@@ -249,12 +249,23 @@ impl Component for Model {
                 });
             }
             Input::DeviceDisconnected => {
-                log::info!("PineTime disconnected");
-                if let Some(infinitime) = self.infinitime.take() {
-                    self.devices_page.emit(devices_page::Input::DeviceConnectionLost(infinitime.device().address()));
-                }
+                let Some(infinitime) = self.infinitime.take() else {
+                    log::debug!("Ignoring duplicate disconnect event");
+                    return;
+                };
+
+                let address = infinitime.device().address();
+
+                log::info!("PineTime disconnected: {}", address);
+
+                self.is_connected = false;
+
+                self.devices_page
+                    .emit(devices_page::Input::DeviceConnectionLost(address));
+
                 self.dashboard_page.emit(dashboard_page::Input::Disconnected);
                 self.fwupd_page.emit(fwupd_page::Input::Disconnected);
+
                 sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceReady(infinitime) => {
