@@ -235,15 +235,38 @@ impl Component for Model {
             Input::DeviceConnected(device) => {
                 log::info!("Device connected: {}", device.address());
                 self.is_connected = true;
+
                 relm4::spawn(async move {
-                    match bt::InfiniTime::new(device).await {
-                        Ok(infinitime) => {
-                            sender.input(Input::DeviceReady(Arc::new(infinitime)));
-                        }
-                        Err(error) => {
-                            sender.input(Input::DeviceRejected);
-                            log::error!("Device is rejected: {}", error);
-                            sender.input(Input::ToastStatic("Device is rejected by the app"));
+                    let mut attempts = 0;
+
+                    loop {
+                        attempts += 1;
+
+                        match bt::InfiniTime::new(device.clone()).await {
+                            Ok(infinitime) => {
+                                log::info!("InfiniTime services resolved after {} attempt(s)", attempts);
+                                sender.input(Input::DeviceReady(Arc::new(infinitime)));
+                                break;
+                            }
+
+                            Err(error) => {
+                                log::warn!(
+                                    "Failed to resolve InfiniTime services on attempt {}: {}",
+                                    attempts,
+                                    error
+                                );
+
+                                if attempts >= 5 {
+                                    sender.input(Input::DeviceRejected);
+                                    sender.input(Input::ToastStatic("Device is rejected by the app"));
+
+                                    // Treat this as a failed connection so the reconnect flow can try again.
+                                    sender.input(Input::DeviceDisconnected);
+                                    break;
+                                }
+
+                                sleep(Duration::from_secs(2)).await;
+                            }
                         }
                     }
                 });
