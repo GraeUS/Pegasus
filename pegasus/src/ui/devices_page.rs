@@ -33,6 +33,7 @@ pub enum Input {
     DeviceConnectionFailed,
     DeviceConnectionLost(bluer::Address),
     SaveAddress(Option<bluer::Address>),
+    RetrySavedConnection(bluer::Address),
 }
 
 #[derive(Debug)]
@@ -403,10 +404,82 @@ impl Component for Model {
                 }
 
                 if Some(address) != self.disconnecting_address && Some(address) == self.saved_address {
+                    log::info!(
+                        "Saved InfiniTime lost. Starting active reconnect loop: {}",
+                        address
+                    );
+
                     self.autoconnect_address = Some(address);
 
                     sender.input(Input::StopDiscovery);
                     sender.input(Input::StartDiscovery);
+                    sender.input(Input::RetrySavedConnection(address));
+                }
+            }
+
+            Input::RetrySavedConnection(address) => {
+                if Some(address) != self.autoconnect_address {
+                    log::debug!(
+                        "Skipping reconnect retry because autoconnect address changed: {}",
+                        address
+                    );
+                    return;
+                }
+
+                let Some(adapter) = self.adapter.clone() else {
+                    log::warn!(
+                        "Cannot retry saved InfiniTime connection because adapter is unavailable"
+                    );
+
+                    let retry_sender = sender.clone();
+                    relm4::spawn(async move {
+                        sleep(Duration::from_secs(30)).await;
+                        retry_sender.input(Input::RetrySavedConnection(address));
+                    });
+
+                    return;
+                };
+
+                log::info!(
+                    "Retrying saved InfiniTime connection directly: {}",
+                    address
+                );
+
+                match adapter.device(address) {
+                    Ok(device) => {
+                        let device = Arc::new(device);
+                        let saved = Some(address) == self.saved_address;
+                        let retry_sender = sender.clone();
+
+                        relm4::spawn(async move {
+                            match DeviceInfo::new(device, saved).await {
+                                Ok(info) => {
+                                    retry_sender.input(Input::DeviceInfoReady(info));
+                                }
+                                Err(error) => {
+                                    log::warn!(
+                                        "Saved InfiniTime not ready during reconnect retry: {}",
+                                        error
+                                    );
+                                }
+                            }
+
+                            sleep(Duration::from_secs(30)).await;
+                            retry_sender.input(Input::RetrySavedConnection(address));
+                        });
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Could not get saved InfiniTime from adapter during reconnect retry: {}",
+                            error
+                        );
+
+                        let retry_sender = sender.clone();
+                        relm4::spawn(async move {
+                            sleep(Duration::from_secs(30)).await;
+                            retry_sender.input(Input::RetrySavedConnection(address));
+                        });
+                    }
                 }
             }
 
