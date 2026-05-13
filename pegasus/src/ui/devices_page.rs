@@ -113,7 +113,13 @@ impl Model {
                 }
             }
             Err(err) => {
-                log::error!("Failed to start discovery session: {}", err);
+                let msg = err.to_string();
+
+                if msg.contains("Operation already in progress") {
+                    log::warn!("Bluetooth discovery already in progress");
+                } else {
+                    log::error!("Failed to start discovery session: {}", err);
+                }
             }
         }
     }
@@ -413,7 +419,12 @@ impl Component for Model {
 
                     sender.input(Input::StopDiscovery);
                     sender.input(Input::StartDiscovery);
-                    sender.input(Input::RetrySavedConnection(address));
+
+                    let retry_sender = sender.clone();
+                        relm4::spawn(async move {
+                            sleep(Duration::from_secs(10)).await;
+                            retry_sender.input(Input::RetrySavedConnection(address));
+                        });
                 }
             }
 
@@ -461,11 +472,11 @@ impl Component for Model {
                                         "Saved InfiniTime not ready during reconnect retry: {}",
                                         error
                                     );
+
+                                    sleep(Duration::from_secs(30)).await;
+                                    retry_sender.input(Input::RetrySavedConnection(address));
                                 }
                             }
-
-                            sleep(Duration::from_secs(30)).await;
-                            retry_sender.input(Input::RetrySavedConnection(address));
                         });
                     }
                     Err(error) => {
