@@ -7,6 +7,7 @@ use relm4::{
     Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
+use tokio::time::{sleep, Duration};
 
 mod dashboard_page;
 mod devices_page;
@@ -259,14 +260,20 @@ impl Component for Model {
             Input::DeviceReady(infinitime) => {
                 log::info!("PineTime recognized");
                 self.infinitime = Some(infinitime.clone());
+
                 if self.active_view == View::Devices {
                     self.active_view = View::Dashboard;
                 }
+
                 self.dashboard_page.emit(dashboard_page::Input::Connected(infinitime.clone()));
                 self.fwupd_page.emit(fwupd_page::Input::Connected(infinitime.clone()));
-                // Handle disconnection
+
+                // Handle explicit Bluetooth disconnect events
+                let disconnect_sender = sender.clone();
+                let infinitime_for_disconnect = infinitime.clone();
+
                 relm4::spawn(async move {
-                    match infinitime.get_property_stream().await {
+                    match infinitime_for_disconnect.get_property_stream().await {
                         Ok(stream) => {
                             pin_mut!(stream);
 
@@ -283,7 +290,29 @@ impl Component for Model {
                             log::error!("Failed to get property stream: {}", error);
                         }
                     }
-                    sender.input(Input::DeviceDisconnected);
+
+                    disconnect_sender.input(Input::DeviceDisconnected);
+                });
+
+                // Keep the BLE connection alive and detect silent drops
+                let healthcheck_sender = sender.clone();
+                let infinitime_for_healthcheck = infinitime.clone();
+
+                relm4::spawn(async move {
+                    loop {
+                        sleep(Duration::from_secs(60)).await;
+
+                        match infinitime_for_healthcheck.read_battery_level().await {
+                            Ok(level) => {
+                                log::debug!("PineTime health check OK. Battery: {}%", level);
+                            }
+                            Err(error) => {
+                                log::warn!("PineTime health check failed: {}", error);
+                                healthcheck_sender.input(Input::DeviceDisconnected);
+                                break;
+                            }
+                        }
+                    }
                 });
             }
             Input::DeviceRejected => {
