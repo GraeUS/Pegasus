@@ -48,6 +48,7 @@ enum Input {
     FlashAssetFromUrl(String, fwupd_page::AssetType),
     Toast(String),
     ToastStatic(&'static str),
+    DeviceConnectionLost(bluer::Address),
     ToastWithLink {
         message: &'static str,
         label: &'static str,
@@ -251,7 +252,6 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Input::SetView(view) => {
@@ -268,6 +268,7 @@ impl Component for Model {
             Input::DeviceConnected(device) => {
                 log::info!("Device connected: {}", device.address());
                 self.is_connected = true;
+                let address = device.address();
 
                 relm4::spawn(async move {
                     let mut attempts = 0;
@@ -325,8 +326,9 @@ impl Component for Model {
 
                                     sender.input(Input::DeviceRejected);
                                     sender.input(Input::ToastStatic("Device is rejected by the app"));
-                                    sender.input(Input::DeviceDisconnected);
+                                    sender.input(Input::DeviceConnectionLost(address));
                                     break;
+
                                 }
 
                                 sleep(Duration::from_secs(3)).await;
@@ -344,6 +346,19 @@ impl Component for Model {
                 let address = infinitime.device().address();
 
                 log::info!("PineTime disconnected: {}", address);
+
+                self.is_connected = false;
+
+                self.devices_page
+                    .emit(devices_page::Input::DeviceConnectionLost(address));
+
+                self.dashboard_page.emit(dashboard_page::Input::Disconnected);
+                self.fwupd_page.emit(fwupd_page::Input::Disconnected);
+
+                sender.input(Input::SetView(View::Devices));
+            }
+            Input::DeviceConnectionLost(address) => {
+                log::info!("PineTime connection lost before ready: {}", address);
 
                 self.is_connected = false;
 

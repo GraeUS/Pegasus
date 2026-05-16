@@ -374,9 +374,6 @@ impl Component for Model {
             Input::DeviceConnected(device) => {
                 log::debug!("Device connected successfully: {}", device.address());
 
-                self.autoconnect_address = None;
-                self.reconnect_in_progress = false;
-
                 _ = self
                     .settings
                     .set_string(super::SETTING_DEVICE_ADDRESS, &device.address().to_string());
