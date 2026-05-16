@@ -60,6 +60,7 @@ pub struct Model {
     saved_address: Option<bluer::Address>,
     autoconnect_address: Option<bluer::Address>,
     disconnecting_address: Option<bluer::Address>,
+    reconnect_in_progress: bool,
 }
 
 impl Model {
@@ -250,6 +251,7 @@ impl Component for Model {
             autoconnect_address: saved_address.clone(),
             saved_address,
             disconnecting_address: None,
+            reconnect_in_progress: false,
         };
 
         let factory_widget = model.devices.widget();
@@ -258,6 +260,7 @@ impl Component for Model {
         sender.input(Input::InitSession);
 
         ComponentParts { model, widgets }
+
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
@@ -370,10 +373,14 @@ impl Component for Model {
 
             Input::DeviceConnected(device) => {
                 log::debug!("Device connected successfully: {}", device.address());
+
                 self.autoconnect_address = None;
+                self.reconnect_in_progress = false;
+
                 _ = self
                     .settings
                     .set_string(super::SETTING_DEVICE_ADDRESS, &device.address().to_string());
+
                 sender.input(Input::SaveAddress(Some(device.address())));
                 sender.output(Output::DeviceConnected(device)).unwrap();
             }
@@ -384,6 +391,7 @@ impl Component for Model {
                     self.autoconnect_address = None;
                 }
                 self.disconnecting_address = None;
+                self.reconnect_in_progress = false;
                 // Repopulate known devices
                 sender.input(Input::StopDiscovery);
                 sender.input(Input::StartDiscovery);
@@ -410,6 +418,13 @@ impl Component for Model {
                 }
 
                 if Some(address) != self.disconnecting_address && Some(address) == self.saved_address {
+                    if self.reconnect_in_progress {
+                        log::debug!("Reconnect already in progress, ignoring duplicate loss event");
+                        return;
+                    }
+
+                    self.reconnect_in_progress = true;
+
                     log::info!(
                         "Saved InfiniTime lost. Starting active reconnect loop: {}",
                         address
@@ -421,10 +436,10 @@ impl Component for Model {
                     sender.input(Input::StartDiscovery);
 
                     let retry_sender = sender.clone();
-                        relm4::spawn(async move {
-                            sleep(Duration::from_secs(10)).await;
-                            retry_sender.input(Input::RetrySavedConnection(address));
-                        });
+                    relm4::spawn(async move {
+                        sleep(Duration::from_secs(10)).await;
+                        retry_sender.input(Input::RetrySavedConnection(address));
+                    });
                 }
             }
 
