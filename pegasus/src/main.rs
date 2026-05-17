@@ -1,4 +1,5 @@
 mod ui;
+mod activity;
 
 fn main() {
     env_logger::Builder::new()

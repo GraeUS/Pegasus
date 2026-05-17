@@ -13,6 +13,7 @@ mod dashboard_page;
 mod devices_page;
 mod fwupd_page;
 mod settings_page;
+mod activity_page;
 mod icon_names {
     include!(concat!(env!("OUT_DIR"), "/icon_names.rs"));
 }
@@ -30,6 +31,7 @@ static BROKER: relm4::MessageBroker<Input> = MessageBroker::new();
 relm4::new_action_group!(ViewActionGroup, "view");
 relm4::new_stateless_action!(DashboardViewAction, ViewActionGroup, "dashboard");
 relm4::new_stateless_action!(DevicesViewAction, ViewActionGroup, "devices");
+relm4::new_stateless_action!(ActivitiesViewAction, ViewActionGroup, "activities");
 relm4::new_stateless_action!(SettingsViewAction, ViewActionGroup, "settings");
 relm4::new_stateless_action!(AboutAction, ViewActionGroup, "about");
 relm4::new_action_group!(WindowActionGroup, "win");
@@ -69,6 +71,7 @@ struct Model {
     devices_page: Controller<devices_page::Model>,
     fwupd_page: Controller<fwupd_page::Model>,
     settings_page: Controller<settings_page::Model>,
+    activity_page: Controller<activity_page::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
@@ -145,12 +148,16 @@ impl Component for Model {
                     add_named[Some("settings_view")] = &gtk::Box {
                         append: model.settings_page.widget(),
                     },
+                    add_named[Some("activities_view")] = &gtk::Box {
+                        append: model.activity_page.widget(),
+                    },
                     #[watch]
                     set_visible_child_name: match model.active_view {
                         View::Dashboard => "dashboard_view",
                         View::Devices => "devices_view",
                         View::FirmwareUpdate => "fwupd_view",
                         View::Settings => "settings_view",
+                        View::Activities => "activities_view",
                     },
                 },
             },
@@ -182,16 +189,21 @@ impl Component for Model {
             .launch(settings.clone())
             .detach();
 
+        let activity_page = activity_page::Model::builder()
+            .launch(())
+            .detach();
+
         // Initialize model
         let model = Model {
             // UI state
-            active_view: View::Devices,
+            active_view: View::Activities,
             is_connected: false,
             // Components
             dashboard_page,
             devices_page,
             fwupd_page,
             settings_page,
+            activity_page,
             // Other
             infinitime: None,
             toast_overlay: adw::ToastOverlay::new(),
@@ -227,6 +239,11 @@ impl Component for Model {
         view_group.add_action(RelmAction::<SettingsViewAction>::new_stateless(
             glib::clone!(#[strong] sender, move |_| {
                 sender.input(Input::SetView(View::Settings));
+            }
+        )));
+        view_group.add_action(RelmAction::<ActivitiesViewAction>::new_stateless(
+            glib::clone!(#[strong] sender, move |_| {
+                sender.input(Input::SetView(View::Activities));
             }
         )));
         view_group.add_action(RelmAction::<AboutAction>::new_stateless(
@@ -355,7 +372,6 @@ impl Component for Model {
                 self.dashboard_page.emit(dashboard_page::Input::Disconnected);
                 self.fwupd_page.emit(fwupd_page::Input::Disconnected);
 
-                sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceConnectionLost(address) => {
                 log::info!("PineTime connection lost before ready: {}", address);
@@ -368,15 +384,14 @@ impl Component for Model {
                 self.dashboard_page.emit(dashboard_page::Input::Disconnected);
                 self.fwupd_page.emit(fwupd_page::Input::Disconnected);
 
-                sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceReady(infinitime) => {
                 log::info!("PineTime recognized");
                 self.infinitime = Some(infinitime.clone());
 
-                if self.active_view == View::Devices {
-                    self.active_view = View::Dashboard;
-                }
+                //if self.active_view == View::Devices {
+                //    self.active_view = View::Dashboard;
+                //}
 
                 self.dashboard_page.emit(dashboard_page::Input::Connected(infinitime.clone()));
                 self.fwupd_page.emit(fwupd_page::Input::Connected(infinitime.clone()));
@@ -493,6 +508,7 @@ pub enum View {
     Devices,
     FirmwareUpdate,
     Settings,
+    Activities,
 }
 
 
