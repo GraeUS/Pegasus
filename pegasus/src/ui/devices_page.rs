@@ -1,15 +1,18 @@
 use crate::ui;
-use std::str::FromStr;
-use infinitime::{ bluer, bt };
-use std::sync::Arc;
 use futures::{pin_mut, StreamExt};
-use gtk::{gio, prelude::{BoxExt, ButtonExt, OrientableExt, ListBoxRowExt, WidgetExt, SettingsExt}};
-use relm4::{
-    adw, gtk,
-    factory::{FactoryComponent, FactorySender, FactoryVecDeque, DynamicIndex},
-    ComponentParts, ComponentSender, Component, JoinHandle, RelmWidgetExt,
+use gtk::{
+    gio,
+    prelude::{BoxExt, ButtonExt, ListBoxRowExt, OrientableExt, SettingsExt, WidgetExt},
 };
-
+use infinitime::{bluer, bt};
+use relm4::{
+    adw,
+    factory::{DynamicIndex, FactoryComponent, FactorySender, FactoryVecDeque},
+    gtk, Component, ComponentParts, ComponentSender, JoinHandle, RelmWidgetExt,
+};
+use std::str::FromStr;
+use std::sync::Arc;
+use tokio::time::{sleep, timeout, Duration};
 
 #[derive(Debug)]
 pub enum Input {
@@ -30,6 +33,7 @@ pub enum Input {
     DeviceConnectionFailed,
     DeviceConnectionLost(bluer::Address),
     SaveAddress(Option<bluer::Address>),
+    RetrySavedConnection(bluer::Address),
 }
 
 #[derive(Debug)]
@@ -56,16 +60,19 @@ pub struct Model {
     saved_address: Option<bluer::Address>,
     autoconnect_address: Option<bluer::Address>,
     disconnecting_address: Option<bluer::Address>,
+    reconnect_in_progress: bool,
 }
 
 impl Model {
     async fn init_adapter(session: Arc<bluer::Session>) -> bluer::Result<bluer::Adapter> {
         let adapter = session.default_adapter().await?;
-        adapter.set_discovery_filter(bluer::DiscoveryFilter {
-            transport: bluer::DiscoveryTransport::Le,
-            pattern: Some(String::from("InfiniTime")),
-            ..Default::default()
-        }).await?;
+        adapter
+            .set_discovery_filter(bluer::DiscoveryFilter {
+                transport: bluer::DiscoveryTransport::Le,
+                pattern: Some(String::from("InfiniTime")),
+                ..Default::default()
+            })
+            .await?;
         Ok(adapter)
     }
 
@@ -102,17 +109,22 @@ impl Model {
                         bluer::AdapterEvent::DeviceRemoved(address) => {
                             sender.input(Input::DeviceRemoved(address));
                         }
-                        _ => ()
+                        _ => (),
                     }
                 }
             }
             Err(err) => {
-                log::error!("Failed to start discovery session: {}", err);
+                let msg = err.to_string();
+
+                if msg.contains("Operation already in progress") {
+                    log::warn!("Bluetooth discovery already in progress");
+                } else {
+                    log::error!("Failed to start discovery session: {}", err);
+                }
             }
         }
     }
 }
-
 
 #[relm4::component(pub)]
 impl Component for Model {
@@ -209,10 +221,14 @@ impl Component for Model {
         }
     }
 
-    fn init(settings: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(
+        settings: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let saved_address = match settings.string(super::SETTING_DEVICE_ADDRESS).as_str() {
             "" => None,
-            address => bluer::Address::from_str(address).ok()
+            address => bluer::Address::from_str(address).ok(),
         };
 
         let devices = FactoryVecDeque::builder()
@@ -235,6 +251,7 @@ impl Component for Model {
             autoconnect_address: saved_address.clone(),
             saved_address,
             disconnecting_address: None,
+            reconnect_in_progress: false,
         };
 
         let factory_widget = model.devices.widget();
@@ -243,6 +260,7 @@ impl Component for Model {
         sender.input(Input::InitSession);
 
         ComponentParts { model, widgets }
+
     }
 
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
@@ -320,7 +338,9 @@ impl Component for Model {
                                 log::debug!("Device discovered: {}", address);
                                 match DeviceInfo::new(device, saved).await {
                                     Ok(info) => sender.input(Input::DeviceInfoReady(info)),
-                                    Err(error) => log::error!("Failed to read device info: {}", error),
+                                    Err(error) => {
+                                        log::error!("Failed to read device info: {}", error)
+                                    }
                                 }
                             }
                         });
@@ -353,8 +373,11 @@ impl Component for Model {
 
             Input::DeviceConnected(device) => {
                 log::debug!("Device connected successfully: {}", device.address());
-                self.autoconnect_address = None;
-                _ = self.settings.set_string(super::SETTING_DEVICE_ADDRESS, &device.address().to_string());
+
+                _ = self
+                    .settings
+                    .set_string(super::SETTING_DEVICE_ADDRESS, &device.address().to_string());
+
                 sender.input(Input::SaveAddress(Some(device.address())));
                 sender.output(Output::DeviceConnected(device)).unwrap();
             }
@@ -365,6 +388,7 @@ impl Component for Model {
                     self.autoconnect_address = None;
                 }
                 self.disconnecting_address = None;
+                self.reconnect_in_progress = false;
                 // Repopulate known devices
                 sender.input(Input::StopDiscovery);
                 sender.input(Input::StartDiscovery);
@@ -382,27 +406,123 @@ impl Component for Model {
             Input::DeviceConnectionLost(address) => {
                 log::debug!("Device connection lost: {}", address);
 
-                let devices = self.devices.guard();
-                let result = devices.iter().enumerate().find(|(_, d)| d.address == address);
-                if let Some((idx, _)) = result {
-                    devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
+                {
+                    let devices = self.devices.guard();
+                    let result = devices.iter().enumerate().find(|(_, d)| d.address == address);
+                    if let Some((idx, _)) = result {
+                        devices.send(idx, DeviceInput::StateUpdated(DeviceState::Disconnected));
+                    }
                 }
+
                 if Some(address) != self.disconnecting_address && Some(address) == self.saved_address {
+                    if self.reconnect_in_progress {
+                        log::debug!("Reconnect already in progress, ignoring duplicate loss event");
+                        return;
+                    }
+
+                    self.reconnect_in_progress = true;
+
+                    log::info!(
+                        "Saved InfiniTime lost. Starting active reconnect loop: {}",
+                        address
+                    );
+
                     self.autoconnect_address = Some(address);
+
+                    sender.input(Input::StopDiscovery);
                     sender.input(Input::StartDiscovery);
+
+                    let retry_sender = sender.clone();
+                    relm4::spawn(async move {
+                        sleep(Duration::from_secs(10)).await;
+                        retry_sender.input(Input::RetrySavedConnection(address));
+                    });
+                }
+            }
+
+            Input::RetrySavedConnection(address) => {
+                if Some(address) != self.autoconnect_address {
+                    log::debug!(
+                        "Skipping reconnect retry because autoconnect address changed: {}",
+                        address
+                    );
+                    return;
+                }
+
+                let Some(adapter) = self.adapter.clone() else {
+                    log::warn!(
+                        "Cannot retry saved InfiniTime connection because adapter is unavailable"
+                    );
+
+                    let retry_sender = sender.clone();
+                    relm4::spawn(async move {
+                        sleep(Duration::from_secs(30)).await;
+                        retry_sender.input(Input::RetrySavedConnection(address));
+                    });
+
+                    return;
+                };
+
+                log::info!(
+                    "Retrying saved InfiniTime connection directly: {}",
+                    address
+                );
+
+                match adapter.device(address) {
+                    Ok(device) => {
+                        let device = Arc::new(device);
+                        let saved = Some(address) == self.saved_address;
+                        let retry_sender = sender.clone();
+
+                        relm4::spawn(async move {
+                            match DeviceInfo::new(device, saved).await {
+                                Ok(info) => {
+                                    retry_sender.input(Input::DeviceInfoReady(info));
+                                }
+                                Err(error) => {
+                                    log::warn!(
+                                        "Saved InfiniTime not ready during reconnect retry: {}",
+                                        error
+                                    );
+
+                                    sleep(Duration::from_secs(30)).await;
+                                    retry_sender.input(Input::RetrySavedConnection(address));
+                                }
+                            }
+                        });
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "Could not get saved InfiniTime from adapter during reconnect retry: {}",
+                            error
+                        );
+
+                        let retry_sender = sender.clone();
+                        relm4::spawn(async move {
+                            sleep(Duration::from_secs(30)).await;
+                            retry_sender.input(Input::RetrySavedConnection(address));
+                        });
+                    }
                 }
             }
 
             Input::SaveAddress(address) => {
                 self.saved_address = address;
                 let address_str = address.map(|a| a.to_string()).unwrap_or_default();
-                _ = self.settings.set_string(super::SETTING_DEVICE_ADDRESS, &address_str);
+                _ = self
+                    .settings
+                    .set_string(super::SETTING_DEVICE_ADDRESS, &address_str);
                 self.devices.broadcast(DeviceInput::SavedAddress(address));
             }
         }
     }
 
-    fn update_cmd(&mut self, msg: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update_cmd(
+        &mut self,
+        msg: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match msg {
             CommandOutput::InitSessionResult(result) => match result {
                 Ok(session) => {
@@ -414,7 +534,7 @@ impl Component for Model {
                 Err(error) => {
                     log::error!("Failed to initialize bluetooth session: {error}");
                 }
-            }
+            },
             CommandOutput::InitAdapterResult(result) => match result {
                 Ok(adapter) => {
                     log::debug!("Bluetooth adapter is initialized");
@@ -441,7 +561,7 @@ impl Component for Model {
                 Err(error) => {
                     log::error!("Failed to initialize bluetooth adapter: {error}");
                 }
-            }
+            },
             CommandOutput::GattServicesResult(result) => match result {
                 Ok(handle) => {
                     self.gatt_server = Some(handle);
@@ -450,10 +570,11 @@ impl Component for Model {
                     log::error!("Failed to start GATT server: {error}");
                     ui::BROKER.send(ui::Input::ToastStatic("Failed to start GATT server"));
                 }
-            }
+            },
 
             CommandOutput::KnownDevices(devices) => {
-                let connected = devices.iter()
+                let connected = devices
+                    .iter()
                     .find(|d| d.state == DeviceState::Connected)
                     .map(|d| d.address);
 
@@ -474,10 +595,15 @@ impl Component for Model {
                         }
                     }
                 } else {
-                    if let Some((i, d)) = devices_guard.iter().enumerate().find(
-                        |(_, d)| Some(d.address) == self.autoconnect_address
-                    ) {
-                        log::info!("Trying to connect to InfiniTime ({})", d.address.to_string());
+                    if let Some((i, d)) = devices_guard
+                        .iter()
+                        .enumerate()
+                        .find(|(_, d)| Some(d.address) == self.autoconnect_address)
+                    {
+                        log::info!(
+                            "Trying to connect to InfiniTime ({})",
+                            d.address.to_string()
+                        );
                         devices_guard.send(i, DeviceInput::Connect);
                     } else {
                         // Otherwise, start discovery
@@ -540,6 +666,20 @@ pub enum DeviceOutput {
     Disconnecting(Arc<bluer::Device>),
     ConnectionFailed,
     SaveAddress(Option<bluer::Address>),
+}
+
+const CONNECT_TIMEOUT_SECS: u64 = 15;
+const BASE_DELAY_SECS: u64 = 1;
+const MAX_DELAY_SECS: u64 = 60;
+const MAX_RETRIES: u32 = 10;
+
+fn reconnect_delay(attempts: u32) -> u64 {
+    BASE_DELAY_SECS
+        .saturating_mul(
+            1u64.checked_shl(attempts.saturating_sub(1).min(6))
+                .unwrap_or(MAX_DELAY_SECS),
+        )
+        .min(MAX_DELAY_SECS)
 }
 
 // Factory for device list
@@ -627,11 +767,7 @@ impl FactoryComponent for DeviceInfo {
         }
     }
 
-    fn init_model(
-        model: Self,
-        _index: &DynamicIndex,
-        _sender: FactorySender<Self>,
-    ) -> Self {
+    fn init_model(model: Self, _index: &DynamicIndex, _sender: FactorySender<Self>) -> Self {
         model
     }
 
@@ -646,26 +782,57 @@ impl FactoryComponent for DeviceInfo {
         widgets
     }
 
-    fn update(
-        &mut self,
-        msg: Self::Input,
-        sender: FactorySender<Self>,
-    ) {
+    fn update(&mut self, msg: Self::Input, sender: FactorySender<Self>) {
         match msg {
             DeviceInput::Connect => {
                 self.state = DeviceState::Transitioning;
                 let device = self.device.clone();
                 relm4::spawn(async move {
-                    match device.connect().await {
-                        Ok(()) => {
-                            sender.input(DeviceInput::StateUpdated(DeviceState::Connected));
-                            _ = sender.output(DeviceOutput::Connected(device));
+                    let mut attempts = 0;
+
+                    loop {
+                        attempts += 1;
+
+                        log::info!("Connection attempt {} to {}", attempts, device.address());
+
+                        let result =
+                            timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS), device.connect())
+                                .await;
+
+                        match result {
+                            Ok(Ok(())) => {
+                                log::info!("Connected to {}", device.address());
+
+                                sender.input(DeviceInput::StateUpdated(DeviceState::Connected));
+
+                                _ = sender.output(DeviceOutput::Connected(device.clone()));
+                                break;
+                            }
+
+                            Ok(Err(error)) => {
+                                log::warn!("Connection attempt {} failed: {}", attempts, error);
+                            }
+
+                            Err(_) => {
+                                log::warn!("Connection attempt {} timed out", attempts);
+                            }
                         }
-                        Err(error) => {
+
+                        if attempts >= MAX_RETRIES {
                             sender.input(DeviceInput::StateUpdated(DeviceState::Disconnected));
+
                             _ = sender.output(DeviceOutput::ConnectionFailed);
-                            log::error!("Connection failure: {}", error);
+
+                            log::error!("Failed to connect after {} attempts", attempts);
+
+                            break;
                         }
+
+                        let delay = reconnect_delay(attempts);
+
+                        log::info!("Retrying connection in {} seconds", delay);
+
+                        sleep(Duration::from_secs(delay)).await;
                     }
                 });
             }

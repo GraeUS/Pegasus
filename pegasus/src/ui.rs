@@ -7,6 +7,7 @@ use relm4::{
     Component, ComponentController, ComponentParts,
     ComponentSender, Controller, RelmApp, MessageBroker
 };
+use tokio::time::{sleep, timeout, Duration};
 
 mod dashboard_page;
 mod devices_page;
@@ -47,6 +48,7 @@ enum Input {
     FlashAssetFromUrl(String, fwupd_page::AssetType),
     Toast(String),
     ToastStatic(&'static str),
+    DeviceConnectionLost(bluer::Address),
     ToastWithLink {
         message: &'static str,
         label: &'static str,
@@ -71,6 +73,39 @@ struct Model {
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
     hide_on_startup: bool,  // Temporary hack
+}
+
+async fn wait_for_services_resolved(
+    device: Arc<bluer::Device>,
+    max_wait: Duration,
+) -> bluer::Result<bool> {
+    if device.is_connected().await? && device.is_services_resolved().await? {
+        return Ok(true);
+    }
+
+    let stream = device.events().await?;
+    pin_mut!(stream);
+
+    let wait = async {
+        while let Some(event) = stream.next().await {
+            if let bluer::DeviceEvent::PropertyChanged(property) = event {
+                log::debug!("Device property changed while waiting for GATT: {:?}", property);
+
+                if let bluer::DeviceProperty::ServicesResolved(true) = property {
+                    return true;
+                }
+
+                if let bluer::DeviceProperty::Connected(false) = property {
+                    log::warn!("Device disconnected before GATT services resolved");
+                    return false;
+                }
+            }
+        }
+
+        false
+    };
+
+    Ok(timeout(max_wait, wait).await.unwrap_or(false))
 }
 
 #[relm4::component]
@@ -217,7 +252,6 @@ impl Component for Model {
         ComponentParts { model, widgets }
     }
 
-
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match msg {
             Input::SetView(view) => {
@@ -234,49 +268,164 @@ impl Component for Model {
             Input::DeviceConnected(device) => {
                 log::info!("Device connected: {}", device.address());
                 self.is_connected = true;
+                let address = device.address();
+
                 relm4::spawn(async move {
-                    match bt::InfiniTime::new(device).await {
-                        Ok(infinitime) => {
-                            sender.input(Input::DeviceReady(Arc::new(infinitime)));
+                    let mut attempts = 0;
+
+                    loop {
+                        attempts += 1;
+
+                        log::info!(
+                            "Waiting for InfiniTime GATT services, attempt {}",
+                            attempts
+                        );
+
+                        match wait_for_services_resolved(device.clone(), Duration::from_secs(20)).await {
+                            Ok(true) => {
+                                log::info!("InfiniTime GATT services resolved");
+                            }
+                            Ok(false) => {
+                                log::warn!(
+                                    "InfiniTime GATT services did not resolve on attempt {}",
+                                    attempts
+                                );
+                            }
+                            Err(error) => {
+                                log::warn!(
+                                    "Failed while waiting for GATT services on attempt {}: {}",
+                                    attempts,
+                                    error
+                                );
+                            }
                         }
-                        Err(error) => {
-                            sender.input(Input::DeviceRejected);
-                            log::error!("Device is rejected: {}", error);
-                            sender.input(Input::ToastStatic("Device is rejected by the app"));
+
+                        match bt::InfiniTime::new(device.clone()).await {
+                            Ok(infinitime) => {
+                                log::info!(
+                                    "InfiniTime services loaded after {} attempt(s)",
+                                    attempts
+                                );
+
+                                sender.input(Input::DeviceReady(Arc::new(infinitime)));
+                                break;
+                            }
+
+                            Err(error) => {
+                                log::warn!(
+                                    "InfiniTime services still unavailable on attempt {}: {}",
+                                    attempts,
+                                    error
+                                );
+
+                                if attempts >= 5 {
+                                    log::warn!(
+                                        "Failed to load InfiniTime services after {} attempts",
+                                        attempts
+                                    );
+
+                                    sender.input(Input::DeviceRejected);
+                                    sender.input(Input::ToastStatic("Device is rejected by the app"));
+                                    sender.input(Input::DeviceConnectionLost(address));
+                                    break;
+
+                                }
+
+                                sleep(Duration::from_secs(3)).await;
+                            }
                         }
                     }
                 });
             }
             Input::DeviceDisconnected => {
-                log::info!("PineTime disconnected");
-                if let Some(infinitime) = self.infinitime.take() {
-                    self.devices_page.emit(devices_page::Input::DeviceConnectionLost(infinitime.device().address()));
-                }
+                let Some(infinitime) = self.infinitime.take() else {
+                    log::debug!("Ignoring duplicate disconnect event");
+                    return;
+                };
+
+                let address = infinitime.device().address();
+
+                log::info!("PineTime disconnected: {}", address);
+
+                self.is_connected = false;
+
+                self.devices_page
+                    .emit(devices_page::Input::DeviceConnectionLost(address));
+
                 self.dashboard_page.emit(dashboard_page::Input::Disconnected);
                 self.fwupd_page.emit(fwupd_page::Input::Disconnected);
+
+                sender.input(Input::SetView(View::Devices));
+            }
+            Input::DeviceConnectionLost(address) => {
+                log::info!("PineTime connection lost before ready: {}", address);
+
+                self.is_connected = false;
+
+                self.devices_page
+                    .emit(devices_page::Input::DeviceConnectionLost(address));
+
+                self.dashboard_page.emit(dashboard_page::Input::Disconnected);
+                self.fwupd_page.emit(fwupd_page::Input::Disconnected);
+
                 sender.input(Input::SetView(View::Devices));
             }
             Input::DeviceReady(infinitime) => {
                 log::info!("PineTime recognized");
                 self.infinitime = Some(infinitime.clone());
+
                 if self.active_view == View::Devices {
                     self.active_view = View::Dashboard;
                 }
+
                 self.dashboard_page.emit(dashboard_page::Input::Connected(infinitime.clone()));
                 self.fwupd_page.emit(fwupd_page::Input::Connected(infinitime.clone()));
-                // Handle disconnection
+
+                // Handle explicit Bluetooth disconnect events
+                let disconnect_sender = sender.clone();
+                let infinitime_for_disconnect = infinitime.clone();
+
                 relm4::spawn(async move {
-                    match infinitime.get_property_stream().await {
+                    match infinitime_for_disconnect.get_property_stream().await {
                         Ok(stream) => {
                             pin_mut!(stream);
-                            // Wait for the event stream to end
-                            stream.count().await;
+
+                            while let Some(property) = stream.next().await {
+                                log::debug!("Device property changed: {:?}", property);
+
+                                if let bluer::DeviceProperty::Connected(false) = property {
+                                    log::info!("PineTime connection lost");
+                                    break;
+                                }
+                            }
                         }
                         Err(error) => {
                             log::error!("Failed to get property stream: {}", error);
                         }
                     }
-                    sender.input(Input::DeviceDisconnected);
+
+                    disconnect_sender.input(Input::DeviceDisconnected);
+                });
+
+                // Keep the BLE connection alive and detect silent drops
+                let healthcheck_sender = sender.clone();
+                let infinitime_for_healthcheck = infinitime.clone();
+
+                relm4::spawn(async move {
+                    loop {
+                        sleep(Duration::from_secs(60)).await;
+
+                        match infinitime_for_healthcheck.read_battery_level().await {
+                            Ok(level) => {
+                                log::debug!("PineTime health check OK. Battery: {}%", level);
+                            }
+                            Err(error) => {
+                                log::warn!("PineTime health check failed: {}", error);
+                                healthcheck_sender.input(Input::DeviceDisconnected);
+                                break;
+                            }
+                        }
+                    }
                 });
             }
             Input::DeviceRejected => {
