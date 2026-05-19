@@ -1,4 +1,4 @@
-use crate::activity::{ActivitySession, ActivityState, ActivityType};
+use crate::activity::{save_activity_session, ActivitySession, ActivityState, ActivityType};
 
 use gtk::prelude::*;
 use relm4::{
@@ -339,7 +339,14 @@ impl Component for Model {
 
                     session.notes = widgets.notes_entry.text().to_string();
 
-                    log::info!("Saving activity session: {:?}", session);
+                    match save_activity_session(session) {
+                        Ok(_) => {
+                            log::info!("Saved activity session: {:?}", session);
+                        }
+                        Err(error) => {
+                            log::error!("Failed to save activity session: {}", error);
+                        }
+                    }
                 }
 
                 self.activity_state = ActivityState::Idle;
