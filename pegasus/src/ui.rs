@@ -14,6 +14,7 @@ mod devices_page;
 mod fwupd_page;
 mod settings_page;
 mod activity_page;
+mod health_page;
 mod icon_names {
     include!(concat!(env!("OUT_DIR"), "/icon_names.rs"));
 }
@@ -33,6 +34,7 @@ relm4::new_stateless_action!(DashboardViewAction, ViewActionGroup, "dashboard");
 relm4::new_stateless_action!(DevicesViewAction, ViewActionGroup, "devices");
 relm4::new_stateless_action!(ActivitiesViewAction, ViewActionGroup, "activities");
 relm4::new_stateless_action!(SettingsViewAction, ViewActionGroup, "settings");
+relm4::new_stateless_action!(HealthViewAction, ViewActionGroup, "health");
 relm4::new_stateless_action!(AboutAction, ViewActionGroup, "about");
 relm4::new_action_group!(WindowActionGroup, "win");
 relm4::new_stateless_action!(CloseAction, WindowActionGroup, "close");
@@ -72,6 +74,7 @@ struct Model {
     fwupd_page: Controller<fwupd_page::Model>,
     settings_page: Controller<settings_page::Model>,
     activity_page: Controller<activity_page::Model>,
+    health_page: Controller<health_page::Model>,
     // Other
     infinitime: Option<Arc<bt::InfiniTime>>,
     toast_overlay: adw::ToastOverlay,
@@ -151,6 +154,9 @@ impl Component for Model {
                     add_named[Some("activities_view")] = &gtk::Box {
                         append: model.activity_page.widget(),
                     },
+                    add_named[Some("health_view")] = &gtk::Box {
+                        append: model.health_page.widget(),
+                    },
                     #[watch]
                     set_visible_child_name: match model.active_view {
                         View::Dashboard => "dashboard_view",
@@ -158,6 +164,7 @@ impl Component for Model {
                         View::FirmwareUpdate => "fwupd_view",
                         View::Settings => "settings_view",
                         View::Activities => "activities_view",
+                        View::Health => "health_view",
                     },
                 },
             },
@@ -193,6 +200,10 @@ impl Component for Model {
             .launch(())
             .detach();
 
+        let health_page = health_page::Model::builder()
+            .launch(())
+            .detach();
+
         // Initialize model
         let model = Model {
             // UI state
@@ -204,6 +215,7 @@ impl Component for Model {
             fwupd_page,
             settings_page,
             activity_page,
+            health_page,
             // Other
             infinitime: None,
             toast_overlay: adw::ToastOverlay::new(),
@@ -251,6 +263,11 @@ impl Component for Model {
                 sender.input(Input::About);
             }
         )));
+        view_group.add_action(RelmAction::<HealthViewAction>::new_stateless(
+            glib::clone!(#[strong] sender, move |_| {
+                sender.input(Input::SetView(View::Health));
+            })
+        ));
         view_group.register_for_widget(&widgets.main_window);
 
         let mut global_group = RelmActionGroup::<WindowActionGroup>::new();
@@ -509,6 +526,7 @@ pub enum View {
     FirmwareUpdate,
     Settings,
     Activities,
+    Health,
 }
 
 

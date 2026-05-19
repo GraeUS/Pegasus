@@ -104,6 +104,7 @@ impl Component for Model {
 
     menu! {
         primary_menu: {
+            "Health" => super::HealthViewAction,
             "PineTime Dashboard" => super::DashboardViewAction,
             "Devices" => super::DevicesViewAction,
             "Settings" => super::SettingsViewAction,
