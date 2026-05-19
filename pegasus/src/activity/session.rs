@@ -64,6 +64,7 @@ pub enum ActivityState {
     Selected(ActivityType),
     Active(ActivitySession),
     Completed(ActivitySession),
+    ViewingHistory(usize),
 }
 
 impl Default for ActivityState {

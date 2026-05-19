@@ -32,6 +32,15 @@ pub fn load_activity_history() -> io::Result<Vec<ActivitySession>> {
     Ok(sessions)
 }
 
+pub fn save_activity_history(sessions: &[ActivitySession]) -> io::Result<()> {
+    let path = activity_history_path()?;
+    let contents = serde_json::to_string_pretty(sessions)?;
+
+    fs::write(path, contents)?;
+
+    Ok(())
+}
+
 pub fn save_activity_session(session: &ActivitySession) -> io::Result<()> {
     let mut sessions = load_activity_history()?;
     sessions.push(session.clone());
