@@ -13,6 +13,7 @@ use relm4::{
 #[derive(Debug)]
 pub enum Input {
     AddTestSample,
+    Refresh,
 }
 
 #[derive(Debug)]
@@ -20,6 +21,13 @@ pub enum Output {}
 
 pub struct Model {
     samples: Vec<DailyHeartRateSample>,
+}
+
+fn load_samples_or_empty() -> Vec<DailyHeartRateSample> {
+    load_daily_heart_rate_samples().unwrap_or_else(|error| {
+        log::error!("Failed to load daily heart-rate samples: {}", error);
+        Vec::new()
+    })
 }
 
 fn summary_text(samples: &[DailyHeartRateSample]) -> String {
@@ -86,6 +94,11 @@ impl Component for Model {
                     },
 
                     gtk::Button {
+                        set_label: "Refresh",
+                        connect_clicked => Input::Refresh,
+                    },
+
+                    gtk::Button {
                         set_label: "Add Test Sample",
                         connect_clicked => Input::AddTestSample,
                     },
@@ -105,10 +118,7 @@ impl Component for Model {
         _root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let samples = load_daily_heart_rate_samples().unwrap_or_else(|error| {
-            log::error!("Failed to load daily heart-rate samples: {}", error);
-            Vec::new()
-        });
+        let samples = load_samples_or_empty();
 
         let model = Model { samples };
         let widgets = view_output!();
@@ -117,28 +127,32 @@ impl Component for Model {
     }
 
     fn update_with_view(
-        &mut self,
-        widgets: &mut Self::Widgets,
-        msg: Self::Input,
-        _sender: ComponentSender<Self>,
-        _root: &Self::Root,
-    ) {
-        match msg {
-            Input::AddTestSample => {
-                let bpm = 72 + (self.samples.len() as u8 % 40);
+    &mut self,
+    widgets: &mut Self::Widgets,
+    msg: Self::Input,
+    _sender: ComponentSender<Self>,
+    _root: &Self::Root,
+) {
+    match msg {
+        Input::AddTestSample => {
+            let bpm = 72 + (self.samples.len() as u8 % 40);
 
-                match add_daily_heart_rate_sample(bpm) {
-                    Ok(sample) => {
-                        log::info!("Added test heart-rate sample: {:?}", sample);
-                        self.samples.push(sample);
-                    }
-                    Err(error) => {
-                        log::error!("Failed to add test heart-rate sample: {}", error);
-                    }
+            match add_daily_heart_rate_sample(bpm) {
+                Ok(sample) => {
+                    log::info!("Added test heart-rate sample: {:?}", sample);
+                    self.samples.push(sample);
+                }
+                Err(error) => {
+                    log::error!("Failed to add test heart-rate sample: {}", error);
                 }
             }
         }
-
-        self.update_view(widgets, _sender);
+        Input::Refresh => {
+            self.samples = load_samples_or_empty();
+            log::info!("Refreshed daily heart-rate samples");
+        }
     }
+
+    self.update_view(widgets, _sender);
+}
 }
