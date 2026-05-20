@@ -136,7 +136,9 @@ impl Component for Model {
 
     menu! {
         main_menu: {
-            "Back to Dashboard" => super::DashboardViewAction,
+            "Activities" => super::ActivitiesViewAction,
+            "Health" => super::HealthViewAction,
+            "PineTime Dashboard" => super::DashboardViewAction,
             "Settings" => super::SettingsViewAction,
             section! {
                 "About" => super::AboutAction,

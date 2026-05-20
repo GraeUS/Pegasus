@@ -142,6 +142,8 @@ impl Component for Model {
 
     menu! {
         main_menu: {
+            "Activities" => super::ActivitiesViewAction,
+            "Health" => super::HealthViewAction,
             "Devices" => super::DevicesViewAction,
             "Settings" => super::SettingsViewAction,
             section! {

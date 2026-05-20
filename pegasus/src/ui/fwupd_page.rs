@@ -136,6 +136,19 @@ impl Component for Model {
     type Output = ();
     type Widgets = Widgets;
 
+
+    menu! {
+    primary_menu: {
+        "Activities" => ui::ActivitiesViewAction,
+        "Health" => ui::HealthViewAction,
+        "PineTime Dashboard" => ui::DashboardViewAction,
+        "Devices" => ui::DevicesViewAction,
+        "Settings" => ui::SettingsViewAction,
+        "Quit" => ui::QuitAction,
+    }
+}
+
+
     view! {
         gtk::Box {
             set_hexpand: true,
@@ -143,18 +156,23 @@ impl Component for Model {
 
             adw::HeaderBar {
                 #[wrap(Some)]
-                set_title_widget = &gtk::Label {
-                    set_label: "Firmware Update",
-                },
+                    set_title_widget = &gtk::Label {
+                        set_label: "Firmware Update",
+                    },
 
-                pack_start = &gtk::Button {
-                    set_tooltip_text: Some("Back"),
+                    pack_start = &gtk::Button {
+                    set_tooltip_text: Some("Back to PineTime Dashboard"),
                     set_icon_name: "go-previous-symbolic",
                     #[watch]
                     set_visible: model.state != State::InProgress,
                     connect_clicked => |_| {
                         ui::BROKER.send(ui::Input::SetView(ui::View::Dashboard));
                     },
+                },
+
+                pack_end = &gtk::MenuButton {
+                    set_icon_name: "open-menu-symbolic",
+                    set_menu_model: Some(&primary_menu),
                 },
             },
 
@@ -219,7 +237,7 @@ impl Component for Model {
                         },
 
                         gtk::Button {
-                            set_label: "Back",
+                            set_label: "Back to PineTime Dashboard",
                             #[watch]
                             set_visible: model.state != State::InProgress,
                             connect_clicked => |_| {
