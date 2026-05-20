@@ -8,6 +8,7 @@ use relm4::{
     ComponentSender, Controller, RelmApp, MessageBroker
 };
 use tokio::time::{sleep, timeout, Duration};
+use crate::health::add_daily_heart_rate_sample;
 
 mod dashboard_page;
 mod devices_page;
@@ -388,6 +389,7 @@ impl Component for Model {
 
                 self.dashboard_page.emit(dashboard_page::Input::Disconnected);
                 self.fwupd_page.emit(fwupd_page::Input::Disconnected);
+                self.activity_page.emit(activity_page::Input::Disconnected);
 
             }
             Input::DeviceConnectionLost(address) => {
@@ -400,6 +402,8 @@ impl Component for Model {
 
                 self.dashboard_page.emit(dashboard_page::Input::Disconnected);
                 self.fwupd_page.emit(fwupd_page::Input::Disconnected);
+                self.activity_page.emit(activity_page::Input::Disconnected);
+
 
             }
             Input::DeviceReady(infinitime) => {
@@ -412,6 +416,7 @@ impl Component for Model {
 
                 self.dashboard_page.emit(dashboard_page::Input::Connected(infinitime.clone()));
                 self.fwupd_page.emit(fwupd_page::Input::Connected(infinitime.clone()));
+                self.activity_page.emit(activity_page::Input::Connected(infinitime.clone()));
 
                 // Handle explicit Bluetooth disconnect events
                 let disconnect_sender = sender.clone();
@@ -457,6 +462,32 @@ impl Component for Model {
                                 break;
                             }
                         }
+                    }
+                });
+                // Sample heart rate every 5 minutes for daily health tracking.
+                // This only runs while the PineTime connection is alive.
+                let infinitime_for_daily_hr = infinitime.clone();
+
+                relm4::spawn(async move {
+                    loop {
+                        match infinitime_for_daily_hr.read_heart_rate().await {
+                            Ok(bpm) => {
+                                match add_daily_heart_rate_sample(bpm) {
+                                    Ok(sample) => {
+                                        log::info!("Saved daily heart-rate sample: {:?}", sample);
+                                    }
+                                    Err(error) => {
+                                        log::error!("Failed to save daily heart-rate sample: {}", error);
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                log::warn!("Failed to read daily heart rate sample: {}", error);
+                                break;
+                            }
+                        }
+
+                        sleep(Duration::from_secs(300)).await;
                     }
                 });
             }

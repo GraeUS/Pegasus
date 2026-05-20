@@ -7,6 +7,9 @@ use crate::activity::{
     ActivityType,
 };
 
+use infinitime::bt;
+use std::sync::Arc;
+
 use gtk::prelude::*;
 use relm4::{
     adw, gtk, menu, Component, ComponentParts, ComponentSender, RelmWidgetExt,
@@ -14,6 +17,9 @@ use relm4::{
 
 #[derive(Debug)]
 pub enum Input {
+    Connected(Arc<bt::InfiniTime>),
+    Disconnected,
+
     Select(ActivityType),
     Start,
     Stop,
@@ -22,6 +28,8 @@ pub enum Input {
     Save,
     ViewHistory(usize),
     DeleteCurrentHistory,
+    SampleHeartRate,
+    HeartRateSample(u8),
 }
 
 #[derive(Debug)]
@@ -30,6 +38,7 @@ pub enum Output {}
 pub struct Model {
     activity_state: ActivityState,
     activity_history: Vec<ActivitySession>,
+    infinitime: Option<Arc<bt::InfiniTime>>,
 }
 
 fn format_duration(duration: std::time::Duration) -> String {
@@ -58,13 +67,14 @@ fn actual_history_index_from_recent_index(
 
 fn format_activity_details(session: &ActivitySession) -> String {
     format!(
-        "Type: {}\nDuration: {}\nDistance: {:.2} km\nSteps: {}\nAverage Heart Rate: {} bpm\nMax Heart Rate: {} bpm\nNotes: {}",
+        "Type: {}\nDuration: {}\nDistance: {:.2} km\nSteps: {}\nAverage Heart Rate: {} bpm\nMax Heart Rate: {} bpm\nHeart Rate Samples: {}\nNotes: {}",
         session.activity_type.label(),
         format_duration(std::time::Duration::from_secs(session.duration_seconds)),
         session.distance_meters / 1000.0,
         session.steps,
         session.avg_heart_rate,
         session.max_heart_rate,
+        session.heart_rate_samples.len(),
         if session.notes.is_empty() { "None" } else { &session.notes }
     )
 }
@@ -453,6 +463,7 @@ impl Component for Model {
         let model = Model {
             activity_state: ActivityState::Idle,
             activity_history,
+            infinitime: None,
         };
 
         let widgets = view_output!();
@@ -481,11 +492,40 @@ impl Component for Model {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         sender.input(Input::Tick);
                     });
+
+                    let hr_sender = _sender.clone();
+
+                    relm4::spawn(async move {
+                        hr_sender.input(Input::SampleHeartRate);
+
+                        loop {
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                            hr_sender.input(Input::SampleHeartRate);
+                            }
+                    });
                 }
             }
             Input::Stop => {
                 if let ActivityState::Active(session) = self.activity_state.clone() {
-                    self.activity_state = ActivityState::Completed(session.stop());
+                    let completed_session = session.stop();
+
+                    widgets
+                        .avg_hr_entry
+                        .set_text(&completed_session.avg_heart_rate.to_string());
+
+                    widgets
+                        .max_hr_entry
+                        .set_text(&completed_session.max_heart_rate.to_string());
+
+                    widgets
+                        .steps_entry
+                        .set_text(&completed_session.steps.to_string());
+
+                    widgets
+                        .distance_entry
+                        .set_text(&format!("{:.2}", completed_session.distance_meters / 1000.0));
+
+                    self.activity_state = ActivityState::Completed(completed_session);
                 }
             }
             Input::Discard => {
@@ -500,6 +540,44 @@ impl Component for Model {
                         sender.input(Input::Tick);
                     });
                 }
+            }
+
+            Input::SampleHeartRate => {
+                if !matches!(self.activity_state, ActivityState::Active(_)) {
+                    return;
+                }
+
+                let Some(infinitime) = self.infinitime.clone() else {
+                    return;
+                };
+
+                let sender = _sender.clone();
+
+                relm4::spawn(async move {
+                    match infinitime.read_heart_rate().await {
+                        Ok(bpm) => {
+                            sender.input(Input::HeartRateSample(bpm));
+                        }
+                        Err(error) => {
+                            log::warn!("Failed to read activity heart-rate sample: {}", error);
+                        }
+                    }
+                });
+            }
+
+            Input::HeartRateSample(bpm) => {
+                if let ActivityState::Active(session) = &mut self.activity_state {
+                    session.add_heart_rate_sample(bpm);
+                    log::info!("Added activity heart-rate sample: {} bpm", bpm);
+                }
+            }
+
+            Input::Connected(infinitime) => {
+                self.infinitime = Some(infinitime);
+            }
+
+            Input::Disconnected => {
+                self.infinitime = None;
             }
 
             Input::ViewHistory(recent_index) => {

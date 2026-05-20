@@ -8,12 +8,19 @@ pub struct ActivitySession {
     pub started_at_unix: u64,
     pub ended_at_unix: Option<u64>,
     pub duration_seconds: u64,
+    pub heart_rate_samples: Vec<ActivityHeartRateSample>,
 
     pub steps: u32,
     pub distance_meters: f64,
     pub avg_heart_rate: u8,
     pub max_heart_rate: u8,
     pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityHeartRateSample {
+    pub timestamp_offset_seconds: u64,
+    pub bpm: u8,
 }
 
 impl ActivitySession {
@@ -23,6 +30,7 @@ impl ActivitySession {
             started_at_unix: current_unix_seconds(),
             ended_at_unix: None,
             duration_seconds: 0,
+            heart_rate_samples: Vec::new(),
 
             steps: 0,
             distance_meters: 0.0,
@@ -39,6 +47,36 @@ impl ActivitySession {
         self.ended_at_unix = Some(ended_at_unix);
 
         self
+    }
+
+    pub fn add_heart_rate_sample(&mut self, bpm: u8) {
+        let timestamp_offset_seconds = self.elapsed().as_secs();
+
+        self.heart_rate_samples.push(ActivityHeartRateSample {
+            timestamp_offset_seconds,
+            bpm,
+        });
+
+        self.max_heart_rate = self
+            .heart_rate_samples
+            .iter()
+            .map(|sample| sample.bpm)
+            .max()
+            .unwrap_or(0);
+
+        let total: u32 = self
+            .heart_rate_samples
+            .iter()
+            .map(|sample| sample.bpm as u32)
+            .sum();
+
+        let count = self.heart_rate_samples.len() as u32;
+
+        self.avg_heart_rate = if count > 0 {
+            (total / count) as u8
+        } else {
+            0
+        };
     }
 
     pub fn elapsed(&self) -> Duration {
