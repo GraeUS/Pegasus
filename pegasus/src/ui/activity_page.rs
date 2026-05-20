@@ -67,7 +67,7 @@ fn actual_history_index_from_recent_index(
 
 fn format_activity_details(session: &ActivitySession) -> String {
     format!(
-        "Type: {}\nDuration: {}\nDistance: {:.2} km\nSteps: {}\nAverage Heart Rate: {} bpm\nMax Heart Rate: {} bpm\nHeart Rate Samples: {}\nNotes: {}",
+        "Type: {}\nDuration: {}\nDistance: {:.2} km\nSteps: {}\nAverage Heart Rate: {} bpm\nMax Heart Rate: {} bpm\nHeart Rate Samples: {}\nNotes: {}\n\n{}",
         session.activity_type.label(),
         format_duration(std::time::Duration::from_secs(session.duration_seconds)),
         session.distance_meters / 1000.0,
@@ -75,7 +75,8 @@ fn format_activity_details(session: &ActivitySession) -> String {
         session.avg_heart_rate,
         session.max_heart_rate,
         session.heart_rate_samples.len(),
-        if session.notes.is_empty() { "None" } else { &session.notes }
+        if session.notes.is_empty() { "None" } else { &session.notes },
+        format_heart_rate_samples(session)
     )
 }
 
@@ -89,6 +90,27 @@ fn format_activity_summary(session: &ActivitySession) -> String {
         distance_km,
         session.steps
     )
+}
+
+fn format_heart_rate_samples(session: &ActivitySession) -> String {
+    if session.heart_rate_samples.is_empty() {
+        return "Heart Rate Samples:\nNone".to_string();
+    }
+
+    let samples = session
+        .heart_rate_samples
+        .iter()
+        .map(|sample| {
+            format!(
+                "{}s: {} bpm",
+                sample.timestamp_offset_seconds,
+                sample.bpm
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!("Heart Rate Samples:\n{}", samples)
 }
 
 fn recent_activity_label(history: &[ActivitySession], index: usize) -> String {
