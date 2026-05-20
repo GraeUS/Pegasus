@@ -1,4 +1,5 @@
 mod ui;
+mod health;
 mod activity;
 
 fn main() {
