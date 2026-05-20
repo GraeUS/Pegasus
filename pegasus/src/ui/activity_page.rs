@@ -126,6 +126,113 @@ fn has_recent_activity(history: &[ActivitySession], index: usize) -> bool {
     history.iter().rev().nth(index).is_some()
 }
 
+fn configure_heart_rate_graph(graph: &gtk::DrawingArea, session: &ActivitySession) {
+    let samples = session.heart_rate_samples.clone();
+
+    graph.set_draw_func(move |_area, cr, width, height| {
+        let width = width as f64;
+        let height = height as f64;
+
+        let margin_left = 42.0;
+        let margin_right = 16.0;
+        let margin_top = 16.0;
+        let margin_bottom = 28.0;
+
+        let plot_width = width - margin_left - margin_right;
+        let plot_height = height - margin_top - margin_bottom;
+
+        // Background
+        cr.set_source_rgb(0.96, 0.96, 0.96);
+        let _ = cr.paint();
+
+        // Border/axis colour
+        cr.set_source_rgb(0.25, 0.25, 0.25);
+        cr.set_line_width(1.0);
+
+        // Y axis
+        cr.move_to(margin_left, margin_top);
+        cr.line_to(margin_left, height - margin_bottom);
+
+        // X axis
+        cr.move_to(margin_left, height - margin_bottom);
+        cr.line_to(width - margin_right, height - margin_bottom);
+        let _ = cr.stroke();
+
+        if samples.len() < 2 {
+            cr.set_source_rgb(0.2, 0.2, 0.2);
+            cr.move_to(margin_left, height / 2.0);
+            let _ = cr.show_text("Not enough heart-rate samples yet");
+            return;
+        }
+
+        let min_bpm = samples.iter().map(|sample| sample.bpm).min().unwrap_or(0) as f64;
+        let max_bpm = samples.iter().map(|sample| sample.bpm).max().unwrap_or(0) as f64;
+
+        let min_time = samples
+            .iter()
+            .map(|sample| sample.timestamp_offset_seconds)
+            .min()
+            .unwrap_or(0) as f64;
+
+        let max_time = samples
+            .iter()
+            .map(|sample| sample.timestamp_offset_seconds)
+            .max()
+            .unwrap_or(1) as f64;
+
+        let bpm_range = (max_bpm - min_bpm).max(1.0);
+        let time_range = (max_time - min_time).max(1.0);
+
+        // Y labels
+        cr.set_source_rgb(0.2, 0.2, 0.2);
+        cr.move_to(6.0, margin_top + 4.0);
+        let _ = cr.show_text(&format!("{} bpm", max_bpm as u8));
+
+        cr.move_to(6.0, height - margin_bottom);
+        let _ = cr.show_text(&format!("{} bpm", min_bpm as u8));
+
+        // X label
+        cr.move_to(margin_left, height - 8.0);
+        let _ = cr.show_text("Time");
+
+        // Draw line
+        cr.set_source_rgb(0.8, 0.1, 0.1);
+        cr.set_line_width(2.0);
+
+        for (index, sample) in samples.iter().enumerate() {
+            let x = margin_left
+                + ((sample.timestamp_offset_seconds as f64 - min_time) / time_range) * plot_width;
+
+            let y = margin_top
+                + ((max_bpm - sample.bpm as f64) / bpm_range) * plot_height;
+
+            if index == 0 {
+                cr.move_to(x, y);
+            } else {
+                cr.line_to(x, y);
+            }
+        }
+
+        let _ = cr.stroke();
+
+        // Draw points
+        cr.set_source_rgb(0.8, 0.1, 0.1);
+
+        for sample in samples.iter() {
+            let x = margin_left
+                + ((sample.timestamp_offset_seconds as f64 - min_time) / time_range) * plot_width;
+
+            let y = margin_top
+                + ((max_bpm - sample.bpm as f64) / bpm_range) * plot_height;
+
+            cr.arc(x, y, 3.0, 0.0, std::f64::consts::TAU);
+            let _ = cr.fill();
+        }
+    });
+
+    graph.queue_draw();
+}
+
 #[relm4::component(pub)]
 impl Component for Model {
     type CommandOutput = ();
@@ -400,6 +507,7 @@ impl Component for Model {
                         #[watch]
                         set_visible: matches!(model.activity_state, ActivityState::ViewingHistory(_)),
 
+
                         gtk::Label {
                             #[watch]
                             set_label: &match &model.activity_state {
@@ -414,6 +522,15 @@ impl Component for Model {
                             set_halign: gtk::Align::Start,
                             set_wrap: true,
                             set_selectable: true,
+                        },
+
+                        #[name = "hr_graph"]
+                        gtk::DrawingArea {
+                            set_content_width: 320,
+                            set_content_height: 180,
+
+                            #[watch]
+                            set_visible: matches!(model.activity_state, ActivityState::ViewingHistory(_)),
                         },
 
                         gtk::Button {
@@ -603,8 +720,13 @@ impl Component for Model {
             }
 
             Input::ViewHistory(recent_index) => {
-                if actual_history_index_from_recent_index(&self.activity_history, recent_index).is_some() {
-                    self.activity_state = ActivityState::ViewingHistory(recent_index);
+                if let Some(actual_index) =
+                    actual_history_index_from_recent_index(&self.activity_history, recent_index)
+                {
+                    if let Some(session) = self.activity_history.get(actual_index) {
+                        configure_heart_rate_graph(&widgets.hr_graph, session);
+                        self.activity_state = ActivityState::ViewingHistory(recent_index);
+                    }
                 }
             }
             Input::DeleteCurrentHistory => {
