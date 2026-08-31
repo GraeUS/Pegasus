@@ -468,28 +468,28 @@ impl Component for Model {
                 // This only runs while the PineTime connection is alive.
                 let infinitime_for_daily_hr = infinitime.clone();
 
-                relm4::spawn(async move {
-                    loop {
-                        match infinitime_for_daily_hr.read_heart_rate().await {
-                            Ok(bpm) => {
-                                match add_daily_heart_rate_sample(bpm) {
-                                    Ok(sample) => {
-                                        log::info!("Saved daily heart-rate sample: {:?}", sample);
-                                    }
-                                    Err(error) => {
-                                        log::error!("Failed to save daily heart-rate sample: {}", error);
-                                    }
-                                }
-                            }
-                            Err(error) => {
-                                log::warn!("Failed to read daily heart rate sample: {}", error);
-                                break;
-                            }
-                        }
+               // relm4::spawn(async move {
+                  //  loop {
+                   //     match infinitime_for_daily_hr.read_heart_rate().await {
+                     //       Ok(bpm) => {
+                         //       match add_daily_heart_rate_sample(bpm) {
+                          //          Ok(sample) => {
+                           //             log::info!("Saved daily heart-rate sample: {:?}", sample);
+                             //       }
+                             //       Err(error) => {
+                              //          log::error!("Failed to save daily heart-rate sample: {}", error);
+                              //      }
+                              //  }
+                           // }
+                          //  Err(error) => {
+                         //       log::warn!("Failed to read daily heart rate sample: {}", error);
+                           //     break;
+                           // }
+                      //  }
 
-                        sleep(Duration::from_secs(300)).await;
-                    }
-                });
+                       // sleep(Duration::from_secs(300)).await;
+                   // }
+              //  });
             }
             Input::DeviceRejected => {
                 self.devices_page.emit(devices_page::Input::StartDiscovery);
